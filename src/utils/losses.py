@@ -134,6 +134,7 @@ def _SNR_SSL(freqs, psd, low_hz=BP_LOW, high_hz=BP_HIGH, freq_delta=BP_DELTA, no
     if not bandpassed:
         freqs, psd = ideal_bandpass(freqs, psd, low_hz, high_hz)
     signal_freq_idx = torch.argmax(psd, dim=1)
+    signal_freq_idx = signal_freq_idx.to(freqs.device)
     signal_freq = freqs[signal_freq_idx].view(-1,1)
     freqs = freqs.repeat(psd.shape[0],1)
     low_cut = signal_freq - freq_delta

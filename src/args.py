@@ -9,7 +9,7 @@ def get_input():
                         type=str,
                         help='Model architecture to use (physnet, rpnet). [physnet]')
     parser.add_argument('--experiment_root',
-                        default=None,
+                        default=r"C:\Users\mobil\Desktop\25summer\PPGPalm\SiNC-rPPG\experiments\exper_0005",
                         type=str,
                         help='Root directory of the experimental results.')
     parser.add_argument('--K',
@@ -25,7 +25,7 @@ def get_input():
                         type=int,
                         help='Whether to enter debugging mode, which decreases dataset size. [0]')
     parser.add_argument('--num_workers',
-                        default=3,
+                        default=0,
                         type=int,
                         help='Number of cpus dedicated to preprocessing and feeding data. [3]')
     parser.add_argument('--continue_training',
@@ -101,11 +101,11 @@ def get_input():
                         type=int,
                         help='Whether to use a scheduler during training and SGD rather than AdamW. [0]')
     parser.add_argument('--lr',
-                        default=0.0001,
+                        default=0.00005,
                         type=float,
                         help='Learning rate. [0.0001]')
     parser.add_argument('--augmentation',
-                        default='figscr',
+                        default='r',
                         type=str,
                         help='Augmentation during training. f=flipping, i=illumination \
                               changes, g=gaussian noise, s=speed, c=resizecropped, r=reverse. [figscr]')
@@ -122,7 +122,7 @@ def get_input():
                         type=float,
                         help='Dropout used in model. [0.5]')
     parser.add_argument('--batch_size',
-                        default=20,
+                        default=2,
                         type=int,
                         help='Batch size for training. [20]')
     parser.add_argument('--fpc',
@@ -140,9 +140,17 @@ def get_input():
 
     ################### Dataset Hyperparameters ########################
     parser.add_argument('--dataset',
-                        default='pure_unsupervised',
+                        default='cup_unsupervised',
                         type=str,
                         help='Dataset: {pure,ubfc,ddpm,hkbu,celebv}_{unsupervised,supervised,testing}. [pure_unsupervised]')
+    parser.add_argument('--train_path',
+                        default='../../data/all_clips/train',
+                        type=str,
+                        help='Path to training data.')
+    parser.add_argument('--val_path',   
+                        default='../../data/all_clips/val',
+                        type=str,
+                        help='Path to validation data.')
     parser.add_argument('--fps',
                         default=30,
                         type=int,
@@ -156,7 +164,7 @@ def get_input():
                         type=int,
                         help='Height of input frames. [64]')
     parser.add_argument('--channels',
-                        default='rgb',
+                        default='g',
                         type=str,
                         help='Input channels (any combo of {r,g,b} where order matters). [rgb]')
 

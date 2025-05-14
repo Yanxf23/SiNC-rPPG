@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 
 class PhysNet(nn.Module):
-    def __init__(self, input_channels=3, drop_p=0.5, t_kern=5, padding_mode='replicate'):
+    def __init__(self, input_channels=1, drop_p=0.5, t_kern=5, padding_mode='replicate'):
         '''
         input_channels: the number of channels of input video (RGB=3)
         drop_p: dropout probability during training

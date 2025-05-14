@@ -11,16 +11,30 @@ def resample_clip(video, length):
 
 
 def arrange_channels(imgs, channels):
-    d = {'b':0, 'g':1, 'r':2, 'n':3}
-    channel_order = [d[c] for c in channels]
-    imgs = imgs[:,:,:,channel_order]
-    return imgs
+    """
+    Select specified channels from input images. Supports grayscale input.
+    
+    Args:
+        imgs: np.ndarray of shape [T, H, W, C]
+        channels: string (e.g., 'rgb', 'g', 'n') indicating desired channels
+    
+    Returns:
+        np.ndarray of shape [T, H, W, len(channels)]
+    """
+    d = {'b': 0, 'g': 1, 'r': 2, 'n': 3}  # standard channel mappings
+    if imgs.shape[3] == 1:
+        # Grayscale image assumed
+        return imgs  # shape already [T, H, W, 1]
+    else:
+        channel_order = [d[c] for c in channels]
+        return imgs[:, :, :, channel_order]
 
 
 def prepare_clip(clip, channels):
     clip = arrange_channels(clip, channels)
     clip = np.transpose(clip, (3, 0, 1, 2)) # [C,T,H,W]
-    clip = clip.astype(np.float64)
+    # clip = clip.astype(np.float64)
+    clip = clip.astype(np.float32)
     return clip
 
 
@@ -103,7 +117,7 @@ def augment_illumination_noise(clip):
 
 def augment_time_reversal(clip):
     if np.random.rand() > 0.5:
-        clip = np.flip(clip, 1)
+        clip = np.flip(clip, 1).copy()
     return clip
 
 

@@ -177,6 +177,19 @@ def infer_over_dataset_testing(model, val_set, criterion, device, arg_obj, norme
 
     return ave_loss, oadd_waves, pred_HRs, gt_waves, gt_HRs
 
+def infer_over_dataset_testing_cup(model, dataset, criterion, device, args):
+    pred_waves = []
+    identifiers = []
+    with torch.no_grad():
+        for clip, subj, idcs, speed in dataset:
+            print(f"Processing subject: {subj}")
+            clip = clip.to(device)
+            pred = model(clip.unsqueeze(0))  # [B, T]
+            pred = pred.squeeze(0).cpu().numpy()
+            pred_waves.append(pred)
+            identifiers.append(subj)
+
+    return pred_waves, identifiers
 
 def evaluate_predictions(pred_waves, pred_HRs, gt_waves, gt_HRs):
     flat_pred_waves = np.hstack((pred_waves))

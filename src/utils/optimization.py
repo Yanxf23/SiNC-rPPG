@@ -39,6 +39,7 @@ def optimization_loop(model, train_loader, optimizer, optimization_step, criteri
 
 def unsupervised_validation_step(model, data, criterions, device, fps, arg_obj, return_pred=False):
     frames = data[0].to(device)
+    # print("[DEBUG] frames dtype:", frames.dtype)
     outputs = model(frames)
     freqs, psd = torch_power_spectral_density(outputs, fps=fps, normalize=False, bandpass=False)
     losses_dict = accumulate_validation_losses(freqs, psd, criterions, device, arg_obj)
@@ -73,6 +74,7 @@ def unsupervised_train_step(model, data, criterions, device, arg_obj):
     low_hz = float(arg_obj.low_hz)
     high_hz = float(arg_obj.high_hz)
     frames, speed = (data[0].to(device), data[3])
+    # print("[DEBUG] frames dtype:", frames.dtype)
     predictions = model(frames)
     predictions = add_noise_to_constants(predictions)
     freqs, psd = torch_power_spectral_density(predictions, fps=fps, low_hz=low_hz, high_hz=high_hz, normalize=False, bandpass=False)

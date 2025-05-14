@@ -12,6 +12,10 @@ def get_dataset(split, arg_obj):
     elif dataset == 'pure_testing':
         from datasets.PURE_testing import PURESupervised as DataSet
         print('Using PURE testing dataset.')
+    elif dataset == 'cup_unsupervised':
+        from CUP_unsupervised import CupDataset as DataSet
+        print('Using CUP dataset.')
+
 
     else:
         print('Dataset not found. Exiting.')
