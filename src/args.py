@@ -9,7 +9,7 @@ def get_input():
                         type=str,
                         help='Model architecture to use (physnet, rpnet). [physnet]')
     parser.add_argument('--experiment_root',
-                        default=r"C:\Users\mobil\Desktop\25summer\PPGPalm\SiNC-rPPG\experiments\exper_0005",
+                        default=None,
                         type=str,
                         help='Root directory of the experimental results.')
     parser.add_argument('--K',

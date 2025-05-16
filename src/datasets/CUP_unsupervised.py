@@ -43,8 +43,9 @@ class CupDataset(Dataset):
 
             assert clip.shape[0] == self.frames_per_clip, \
                 f"Clip {path} has {clip.shape[0]} frames, expected {self.frames_per_clip}"
-
-            self.samples.append((subj, clip))  # store each clip as one sample
+            
+            if "See3" in path and "850" in path:
+                self.samples.append((subj, clip))  # store each clip as one sample
 
         print(f"[DEBUG] Dataset size: {len(self.samples)}")
 
