@@ -101,11 +101,12 @@ def get_input():
                         type=int,
                         help='Whether to use a scheduler during training and SGD rather than AdamW. [0]')
     parser.add_argument('--lr',
-                        default=0.00005,
+                        default=0.0001,
                         type=float,
                         help='Learning rate. [0.0001]')
     parser.add_argument('--augmentation',
-                        default='r',
+                        # default='figscr',
+                        default='figscr',
                         type=str,
                         help='Augmentation during training. f=flipping, i=illumination \
                               changes, g=gaussian noise, s=speed, c=resizecropped, r=reverse. [figscr]')
@@ -122,7 +123,7 @@ def get_input():
                         type=float,
                         help='Dropout used in model. [0.5]')
     parser.add_argument('--batch_size',
-                        default=2,
+                        default=20,
                         type=int,
                         help='Batch size for training. [20]')
     parser.add_argument('--fpc',
@@ -143,12 +144,28 @@ def get_input():
                         default='cup_unsupervised',
                         type=str,
                         help='Dataset: {pure,ubfc,ddpm,hkbu,celebv}_{unsupervised,supervised,testing}. [pure_unsupervised]')
+    parser.add_argument('--cam',
+                        default=['See3'],
+                        type=list,
+                        help='See3 or OpenMV')
+    parser.add_argument('--condition',
+                        default=["Clean", "Warm"],
+                        type=list,
+                        help='palm surface conditions')
+    parser.add_argument('--wavelength',
+                        default=[850, 890],
+                        type=list,
+                        help='NIR illuminations')
+    parser.add_argument('--data_type',
+                        default='real',
+                        type=str,
+                        help='static for repeated frames, shuffle for random frames, static_periodic for periodic noise, or real for real data. [real]')
     parser.add_argument('--train_path',
-                        default='../../data/all_clips/train',
+                        default='../../data/see3/train',
                         type=str,
                         help='Path to training data.')
     parser.add_argument('--val_path',   
-                        default='../../data/all_clips/val',
+                        default='../../data/see3/val',
                         type=str,
                         help='Path to validation data.')
     parser.add_argument('--fps',
@@ -192,7 +209,8 @@ def print_args(args):
     for arg in sorted(vars(args)):
         val = getattr(args, arg)
         if val is not None:
-            print('{0:<21} {1:<}'.format(arg, val))
+            # print('{0:<21} {1:<}'.format(arg, val))
+            print('{0:<21} {1}'.format(str(arg), str(val)))
         else:
             print('{0:<21} None'.format(arg))
     print('')
@@ -203,7 +221,8 @@ def log_args(args, file_path):
         for arg in sorted(vars(args)):
             val = getattr(args, arg)
             if val is not None:
-                outfile.write('{0:<21} {1:<}\n'.format(arg, val))
+                # outfile.write('{0:<21} {1:<}\n'.format(arg, val))
+                outfile.write('{0:<21} {1}\n'.format(str(arg), str(val)))
             else:
                 outfile.write('{0:<21} None\n'.format(arg))
 

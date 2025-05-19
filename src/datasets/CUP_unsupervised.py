@@ -16,6 +16,10 @@ class CupDataset(Dataset):
         self.speed_slow = arg_obj.speed_slow
         self.speed_fast = arg_obj.speed_fast
         self.data_path = arg_obj.train_path if split == 'train' else arg_obj.val_path
+        self.type = arg_obj.data_type
+        self.condition = arg_obj.condition
+        self.cam = arg_obj.cam
+        self.wavelength = arg_obj.wavelength
 
         self.data = {}        # nested dict: {subj: {'video': ndarray}}
         self.samples = []     # list of (subj, start_idx)
@@ -44,7 +48,7 @@ class CupDataset(Dataset):
             assert clip.shape[0] == self.frames_per_clip, \
                 f"Clip {path} has {clip.shape[0]} frames, expected {self.frames_per_clip}"
             
-            if "See3" in path and "850" in path:
+            if any(str(w) in path for w in self.wavelength) and any(str(c) in path for c in self.cam) and any(str(c) in path for c in self.condition):
                 self.samples.append((subj, clip))  # store each clip as one sample
 
         print(f"[DEBUG] Dataset size: {len(self.samples)}")
@@ -65,6 +69,9 @@ class CupDataset(Dataset):
             self.aug_reverse = 'r' in self.aug
 
     def apply_transformations(self, clip, subj, idcs, augment=True):
+        # mean = clip.mean()
+        # std = clip.std()
+        # print(f"[DEBUG] Clip mean: {mean}, std: {std}")
         if augment:
             # print(f"[DEBUG] Applying augmentations to subject: {subj}, indices: {idcs}")
             if self.aug_flip:
@@ -88,6 +95,10 @@ class CupDataset(Dataset):
                 clip = transforms.random_resized_crop(clip)
             if self.aug_reverse:
                 clip = transforms.augment_time_reversal(clip)
+        # mean = clip.mean()
+        # std = clip.std()
+        # clip = (clip - mean) / (std + 1e-6)
+        # print(f"[DEBUG] Clip mean after aug: {mean}, std: {std}")
         return clip, idcs, 1
 
 
@@ -96,12 +107,44 @@ class CupDataset(Dataset):
 
     def __getitem__(self, idx):
         subj, clip = self.samples[idx]
+        idcs = np.arange(0, self.frames_per_clip, dtype=int)
         clip = transforms.prepare_clip(clip, self.channels)  # [C, T, H, W]
+        if self.type == 'static':
+            # print("[DEBUG] Mimicing fake data...")
+            clip = clip[:, :1, :, :]
+            clip = np.repeat(clip, self.frames_per_clip, axis=1)
+        elif self.type == 'shuffle':
+            # Shuffle frame order
+            indices = np.arange(self.frames_per_clip)
+            np.random.shuffle(indices)
+            clip = clip[:, indices, :, :]
+        elif self.type == 'static_periodic':
+            # Freeze spatial content
+            clip = clip[:, :1, :, :]  # shape [C, 1, H, W]
+            clip = np.repeat(clip, self.frames_per_clip, axis=1)  # [C, T, H, W]
 
+            # Parameters
+            fps = 30  # frames per second; update to match your data
+            T = self.frames_per_clip
+            C, _, H, W = clip.shape
+
+            # Random pulse frequency in Hz (e.g., 0.8–2.5 Hz = 48–150 bpm)
+            pulse_freq = np.random.uniform(0.8, 2.5)  # Hz
+            t = np.linspace(0, T / fps, T)  # time in seconds
+
+            # Create modulation: sinusoidal variation centered at 1
+            delta = 0.05  # 5% modulation strength; adjust as needed
+            modulation = 1.0 + delta * np.sin(2 * np.pi * pulse_freq * t)  # shape [T]
+
+            # Apply to clip (broadcast to [C, T, H, W])
+            modulation = modulation[None, :, None, None]  # reshape to [1, T, 1, 1]
+            clip = clip * modulation.astype(np.float32)
+
+        
         if self.split == 'train':
-            clip, idcs, speed = self.apply_transformations(clip, subj, 1)
+            clip, idcs, speed = self.apply_transformations(clip, subj, idcs)
         else:
-            clip, idcs, speed = self.apply_transformations(clip, subj, 1, augment=False)
+            clip, idcs, speed = self.apply_transformations(clip, subj, idcs, augment=False)
 
         return torch.from_numpy(clip.astype(np.float32)), subj, idcs, speed
         

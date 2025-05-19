@@ -42,7 +42,7 @@ def main():
     print(f"Using model: {model_path}")
 
     # --- Output folder setup ---
-    output_dir = os.path.join('../predictions', experiment_dir.split('/')[-1])
+    output_dir = experiment_dir
     os.makedirs(output_dir, exist_ok=True)
 
     # --- Load test dataset ---
@@ -53,7 +53,7 @@ def main():
     # --- Load model ---
     arg_obj.model_type = model_tag.split('_')[0]  # assumes model type is first token
     model = select_model(arg_obj)
-    checkpoint = torch.load(model_path, map_location=device)
+    checkpoint = torch.load(model_path, map_location=device, weights_only=False)
     model.load_state_dict(checkpoint['model_state_dict'])
     model = model.float().to(device)
     model.eval()
@@ -67,7 +67,7 @@ def main():
         save_path = os.path.join(output_dir, "predictions", f"{name}_wave.npy")
         os.makedirs(os.path.dirname(save_path), exist_ok=True)
         np.save(save_path, wave)
-        plot_waveform(save_path, save=True)
+        # plot_waveform(save_path, save=True)
 
     print(f"✅ Saved {len(pred_waves)} predicted waveforms to {output_dir}")
 

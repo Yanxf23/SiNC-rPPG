@@ -1,16 +1,36 @@
 import os
+import argparse
 import numpy as np
 import matplotlib.pyplot as plt
 import pandas as pd
-import scipy.signal as sps  # safe alias
+import scipy.signal as sps
+from collections import defaultdict
+from sklearn.metrics import mean_absolute_error, mean_squared_error
+from scipy.stats import pearsonr
+from scipy.signal import periodogram, find_peaks, windows
+from scipy.ndimage import gaussian_filter1d
+from scipy import signal
+from scipy.fft import fft
 
+# === Argument parsing ===
+parser = argparse.ArgumentParser()
+parser.add_argument("--experiment_root", type=str, required=True)
+parser.add_argument("--condition", type=str, required=True)
+parser.add_argument("--cam", type=str, default="OpenMV", required=False) #See3
+args = parser.parse_args()
+
+experiment_root = args.experiment_root
+condition = args.condition
+cam = args.cam
+directory = os.path.join(experiment_root, "predictions")
+results_dir = os.path.join(experiment_root, "results", condition)
+os.makedirs(results_dir, exist_ok=True)
+
+# === Ground truth reader ===
 def read_csv(user_id):
-    csv_path = r"C:\Users\mobil\Desktop\25summer\PPGPalm\SiNC-rPPG\experiments\user_info.csv"
+    csv_path = r"user_info.csv"
     df = pd.read_csv(csv_path)
-
     user_row = df[df['User ID'].astype(str).str.zfill(3) == user_id]
-
-    # Extract relevant ground truth values
     if not user_row.empty:
         ground_truth = {
             'pulse_rate_bpm': user_row['Pulse Rate'].values[0],
@@ -20,32 +40,108 @@ def read_csv(user_id):
         }
     else:
         ground_truth = {}
-    
     return ground_truth
 
 def load_npy(file_path):
-    # Load the signal
     if os.path.exists(file_path):
         predicted_rppg = np.load(file_path)
         signal_length = len(predicted_rppg)
-        duration = signal_length / 30  # Assuming 30 fps sampling
+        duration = signal_length / 30
         t = np.linspace(0, duration, signal_length)
     else:
         predicted_rppg = None
         t = None
-    
     return predicted_rppg, t
 
-# 1. Estimate Pulse Rate (via FFT)
-def estimate_pulse_rate(sig, fs):
-    f, Pxx = sps.periodogram(sig, fs)
-    mask = (f >= 0.66) & (f <= 3.0)
-    f_valid, Pxx_valid = f[mask], Pxx[mask]
-    peak_idx = np.argmax(Pxx_valid)
-    peak_freq = f_valid[peak_idx]
-    return peak_freq * 60, f_valid, Pxx_valid
+def estimate_pulse_rate(tmp_gt, file_path, sig, fs, plot=True, harmonics_removal=True, title=None):
+    os.makedirs(results_dir, exist_ok=True)
 
-# 2. Estimate Respiration Rate (via low-pass or envelope)
+    sig_nowin = sig.copy()
+    hann_win = signal.windows.hann(len(sig))
+    sig_win = sig * hann_win
+
+    def process_fft_and_peak(tmp_signal, fs, harmonics_removal):
+        fft_full = np.abs(fft(tmp_signal))
+        fft_half = fft_full[:len(tmp_signal) // 2]
+        freq_axis = np.linspace(0, fs / 2, len(fft_half))
+
+        # Apply bandpass mask
+        low_idx = int(np.round(0.66 / fs * len(tmp_signal)))
+        high_idx = int(np.round(3.0 / fs * len(tmp_signal)))
+        fft_masked = fft_half.copy()
+        fft_masked[:low_idx] = 0
+        fft_masked[high_idx:] = 0
+
+        # Peak detection
+        peak_idx, _ = signal.find_peaks(fft_masked)
+        if len(peak_idx) < 1:
+            return None, None, fft_half, fft_masked, freq_axis
+
+        sorted_idx = np.argsort(fft_masked[peak_idx])[::-1]
+        peak_idx1 = peak_idx[sorted_idx[0]]
+        peak_idx2 = peak_idx[sorted_idx[1]] if len(sorted_idx) > 1 else peak_idx1
+
+        # Harmonics removal
+        hr1 = freq_axis[peak_idx1] * 60
+        hr2 = freq_axis[peak_idx2] * 60
+        if harmonics_removal and abs(hr1 - 2 * hr2) < 10:
+            hr = hr2
+            selected_peak = peak_idx2
+        else:
+            hr = hr1
+            selected_peak = peak_idx1
+
+        return hr, selected_peak, fft_half, fft_masked, freq_axis
+
+    hr_nowin, selected_peak_nowin, fft_nowin, fft_nowin_masked, freq_axis = process_fft_and_peak(sig_nowin, fs, harmonics_removal)
+    hr_win, selected_peak_win, fft_win, fft_win_masked, _ = process_fft_and_peak(sig_win, fs, harmonics_removal)
+
+    hr = hr_nowin  # return the final Hann-windowed result
+
+    # Plotting
+    if plot:
+        fig, axs = plt.subplots(2, 2, figsize=(12, 6))
+
+        # Time-domain signals
+        axs[0, 0].plot(sig_nowin)
+        axs[0, 0].set_title("Raw Signal")
+        axs[0, 0].set_xlabel("Time Index")
+        axs[0, 0].set_ylabel("Amplitude")
+
+        axs[0, 1].plot(sig_win)
+        axs[0, 1].set_title("Signal with Hann Window")
+        axs[0, 1].set_xlabel("Time Index")
+        axs[0, 1].set_ylabel("Amplitude")
+
+        # FFT No Window
+        axs[1, 0].plot(freq_axis, fft_nowin, label="FFT (No Window)", alpha=0.4)
+        axs[1, 0].plot(freq_axis, fft_nowin_masked, label="Masked FFT", linewidth=2)
+        axs[1, 0].axvline(freq_axis[selected_peak_nowin], color='black', linestyle='--', linewidth=2, label="Selected Peak")
+        axs[1, 0].axvline(tmp_gt / 60, color='red', linestyle='--', linewidth=2, label="GT Peak")
+        axs[1, 0].set_xlim(0, 6)
+        axs[1, 0].set_xlabel("Frequency (Hz)")
+        axs[1, 0].set_ylabel("Power")
+        axs[1, 0].set_title(f"Spectrum Without Window\nEst HR: {hr_nowin:.2f} bpm, GT: {tmp_gt:.2f} bpm")
+        axs[1, 0].legend()
+
+        # FFT With Window
+        axs[1, 1].plot(freq_axis, fft_win, label="FFT (With Window)", alpha=0.4)
+        axs[1, 1].plot(freq_axis, fft_win_masked, label="Masked FFT", linewidth=2)
+        axs[1, 1].axvline(freq_axis[selected_peak_win], color='black', linestyle='--', linewidth=2, label="Selected Peak")
+        axs[1, 1].axvline(tmp_gt / 60, color='red', linestyle='--', linewidth=2, label="GT Peak")
+        axs[1, 1].set_xlim(0, 6)
+        axs[1, 1].set_xlabel("Frequency (Hz)")
+        axs[1, 1].set_ylabel("Power")
+        axs[1, 1].set_title(f"Spectrum With Hann Window\nEst HR: {hr_win:.2f} bpm, GT: {tmp_gt:.2f} bpm")
+        axs[1, 1].legend()
+
+        plt.tight_layout()
+        title = os.path.basename(file_path).split(".")[0] + "_comparison" if title is None else title
+        plt.savefig(os.path.join(results_dir, f"{title}_comparison.png"))
+        plt.close()
+
+    return hr, freq_axis, fft_win_masked
+
 def estimate_breaths(signal, fs):
     b, a = sps.butter(2, [0.1 / (fs/2), 0.4 / (fs/2)], btype='band')
     filtered = sps.filtfilt(b, a, signal)
@@ -53,47 +149,77 @@ def estimate_breaths(signal, fs):
     peak_freq = f[np.argmax(Pxx)]
     return peak_freq * 60, filtered
 
-# 3. Estimate PI (AC/DC ratio)
 def estimate_PI(signal):
     ac = np.std(signal)
     dc = np.mean(np.abs(signal))
     return (ac / dc) * 100
 
-# 4. Estimate PVI (amplitude variation over time)
 def estimate_PVI(signal, fs):
     peaks, _ = sps.find_peaks(signal, distance=fs/2.5)
     amplitudes = signal[peaks]
     return (np.std(amplitudes) / np.mean(amplitudes)) * 100 if len(amplitudes) > 1 else 0
 
 def get_results(file_path):
-    user_id = file_path.split("\\")[-1].split("_")[0]
-
+    user_id = file_path.split("/")[-1].split("_")[0]
     rppg_signal, t = load_npy(file_path)
     fs = 30
-    # Run estimations
-    pulse_est, f_hr, Pxx_hr = estimate_pulse_rate(rppg_signal, fs)
+    ground_truth = read_csv(user_id)
+    tmp_gt = ground_truth.get("pulse_rate_bpm", np.nan)
+    if np.isnan(tmp_gt):
+        # print(f"Warning: No ground truth data for {user_id}. Skipping pulse rate estimation.")
+        pulse_est, f_hr, Pxx_hr = -1, -1, -1
+    else:
+        pulse_est, f_hr, Pxx_hr = estimate_pulse_rate(tmp_gt, file_path, rppg_signal, fs)
     breaths_est, filtered_breath = estimate_breaths(rppg_signal, fs)
     pi_est = estimate_PI(rppg_signal)
     pvi_est = estimate_PVI(rppg_signal, fs)
-    # Compile results
-
-    ground_truth = read_csv(user_id)
-
     results = {
         "User ID": user_id,
         "Estimated Pulse Rate (bpm)": pulse_est,
-        "Ground Truth Pulse Rate (bpm)": ground_truth["pulse_rate_bpm"],
+        "Ground Truth Pulse Rate (bpm)": ground_truth.get("pulse_rate_bpm", np.nan),
         "Estimated Breaths/min": breaths_est,
-        "Ground Truth Breaths/min": ground_truth["breaths_per_min"],
+        "Ground Truth Breaths/min": ground_truth.get("breaths_per_min", np.nan),
         "Estimated PI": pi_est,
-        "Ground Truth PI": ground_truth["PI"],
+        "Ground Truth PI": ground_truth.get("PI", np.nan),
         "Estimated PVI": pvi_est,
-        "Ground Truth PVI": ground_truth["PVI"]
+        "Ground Truth PVI": ground_truth.get("PVI", np.nan)
     }
     return results
 
-# Function to plot one figure per physiological signal
-def plot_comparison(df, signal_name, est_col, gt_col):
+def process_directory(directory, condition, cam):
+    results = []
+    for root, dirs, files in os.walk(directory):
+        for file in files:
+            if file.endswith(".npy"):
+                if condition not in file or cam not in file:
+                    continue
+                file_path = os.path.join(root, file)
+                results.append(get_results(file_path))
+    return results
+
+def plot_comparison_grouped(df, signal_name, est_col, gt_col, save_path):
+    df_grouped = df.groupby('User ID')[[gt_col, est_col]].agg(['mean', 'std'])
+    users = df_grouped.index.tolist()
+    gt_mean = df_grouped[(gt_col, 'mean')]
+    gt_std = df_grouped[(gt_col, 'std')]
+    est_mean = df_grouped[(est_col, 'mean')]
+    est_std = df_grouped[(est_col, 'std')]
+
+    x = range(len(users))
+    plt.figure(figsize=(16, 4))
+    plt.errorbar(x, gt_mean, yerr=gt_std, fmt='o-', label='Ground Truth')
+    plt.errorbar(x, est_mean, yerr=est_std, fmt='s--', label='Estimated')
+
+    plt.xticks(x, users, rotation=45)
+    plt.ylabel(signal_name)
+    plt.title(f"{signal_name}: Estimated vs Ground Truth (Grouped by User)")
+    plt.legend()
+    plt.grid(True)
+    plt.tight_layout()
+    plt.savefig(save_path)
+    plt.close()
+
+def plot_comparison(df, signal_name, est_col, gt_col, save_path):
     plt.figure(figsize=(8, 4))
     x = range(len(df))
     plt.plot(x, df[gt_col], 'o-', label='Ground Truth')
@@ -104,30 +230,68 @@ def plot_comparison(df, signal_name, est_col, gt_col):
     plt.legend()
     plt.tight_layout()
     plt.grid(True)
-    plt.show()
+    plt.savefig(save_path)
+    plt.close()
 
-def process_directory(directory, condition, cam):
-    results = []
-    for root, dirs, files in os.walk(directory):
-        for file in files:
-            if file.endswith(".npy"):
-                if condition not in file:
-                    continue
-                if cam not in file:
-                    continue
-                file_path = os.path.join(root, file)
-                result = get_results(file_path)
-                results.append(result)
-    return results
-
-condition = "Clean"
-cam = "See3"
-directory = r"C:\Users\mobil\Desktop\25summer\PPGPalm\SiNC-rPPG\experiments\exper_0005\predictions"
-results = process_directory(directory, condition, cam)
+# === Run and evaluate ===
+results = process_directory(directory, args.condition, args.cam)
 df = pd.DataFrame(results)
+df.columns = df.columns.str.strip()
+df = df.dropna()
 
-# Plot all four physiological signals
-# plot_comparison(df, "Pulse Rate (bpm)", "Estimated Pulse Rate (bpm)", "Ground Truth Pulse Rate (bpm)")
-# plot_comparison(df, "Breathing Rate (bpm)", "Estimated Breaths/min", "Ground Truth Breaths/min")
-plot_comparison(df, "Perfusion Index", "Estimated PI", "Ground Truth PI")
-# plot_comparison(df, "Pleth Variability Index", "Estimated PVI", "Ground Truth PVI")
+# --- Save plots ---
+plot_comparison(df, "Pulse Rate (bpm)", "Estimated Pulse Rate (bpm)", "Ground Truth Pulse Rate (bpm)", os.path.join(results_dir, "pulse_rate.png"))
+# plot_comparison(df, "Breathing Rate (bpm)", "Estimated Breaths/min", "Ground Truth Breaths/min", os.path.join(results_dir, "breathing_rate.png"))
+plot_comparison(df, "Perfusion Index", "Estimated PI", "Ground Truth PI", os.path.join(results_dir, "pi.png"))
+plot_comparison(df, "Pleth Variability Index", "Estimated PVI", "Ground Truth PVI", os.path.join(results_dir, "pvi.png"))
+
+# plot_comparison_grouped(df, "Pulse Rate (bpm)", "Estimated Pulse Rate (bpm)", "Ground Truth Pulse Rate (bpm)", os.path.join(results_dir, "pulse_rate_new.png"))
+
+# --- Save metrics ---
+def compute_metrics(gt, est):
+    gt, est = np.array(gt).astype(float), np.array(est).astype(float)
+    mask = np.isfinite(gt) & np.isfinite(est)
+    if mask.sum() == 0:
+        return None
+    gt, est = gt[mask], est[mask]
+    mae = mean_absolute_error(gt, est)
+    rmse = mean_squared_error(gt, est, squared=False)
+    return mae, rmse
+
+def compute_metrics_per_user(df, user_col, gt_col, est_col):
+    user_errors = {}
+    for user_id, group in df.groupby(user_col):
+        gt = group[gt_col]
+        est = group[est_col]
+        result = compute_metrics(gt, est)
+        if result is not None:
+            mae, rmse = result
+            # print(f"User {user_id}: MAE={mae:.2f}, RMSE={rmse:.2f}")
+            user_errors[user_id] = (mae, rmse)
+        else:
+            # print(f"User {user_id}: invalid or missing data")
+            user_errors[user_id] = None
+    return user_errors
+
+metrics = {
+    "Pulse Rate (bpm)": compute_metrics(df["Ground Truth Pulse Rate (bpm)"], df["Estimated Pulse Rate (bpm)"]),
+    "Breathing Rate (bpm)": compute_metrics(df["Ground Truth Breaths/min"], df["Estimated Breaths/min"]),
+    "Perfusion Index": compute_metrics(df["Ground Truth PI"], df["Estimated PI"]),
+    "Pleth Variability Index": compute_metrics(df["Ground Truth PVI"], df["Estimated PVI"])
+}
+
+user_errors = compute_metrics_per_user(df, user_col='User ID', gt_col='Ground Truth Pulse Rate (bpm)', est_col='Estimated Pulse Rate (bpm)')
+with open(os.path.join(results_dir, "metrics.txt"), "w") as f:
+    for signal, m in metrics.items():
+        f.write(f"{signal}:\n")
+        if m is None:
+            f.write("  No valid data.\n\n")
+        else:
+            mae, rmse = m
+            f.write(f"  MAE  = {mae:.2f}\n")
+            f.write(f"  RMSE = {rmse:.2f}\n")
+    f.write("\n\n")
+    for user_id, m in user_errors.items():
+        mae, rmse = m
+        f.write(f"User {user_id} MAE: {mae:.2f}\n")
+
