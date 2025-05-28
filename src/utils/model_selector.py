@@ -11,7 +11,8 @@ def select_model(arg_obj):
         model = RPNet(input_channels=input_channels, drop_p=dropout)
     elif model_type == 'physnet':
         from models.PhysNet import PhysNet
-        model = PhysNet(input_channels=input_channels, drop_p=dropout)
+        model = PhysNet(input_channels=input_channels, drop_p=dropout, 
+                        early_mask=arg_obj.early_mask, mid_mask=arg_obj.mid_mask)
     else:
         print('Could not find model specified.')
         sys.exit(-1)

@@ -43,7 +43,7 @@ def debug_hook(module, input, output):
     save_clip_as_mp4(input[0][0].cpu())  # Show first clip in batch
 
 class PhysNet(nn.Module):
-    def __init__(self, input_channels=1, drop_p=0.5, t_kern=5, padding_mode='replicate'):
+    def __init__(self, input_channels=1, drop_p=0.5, t_kern=5, early_mask=False, mid_mask=False, padding_mode='replicate'):
         '''
         input_channels: the number of channels of input video (RGB=3)
         drop_p: dropout probability during training
@@ -51,8 +51,33 @@ class PhysNet(nn.Module):
         padding_mode: pad for input and convolutions to avoid edge effects
         '''
         super(PhysNet, self).__init__()
+        self.early_mask = early_mask
+        self.mid_mask = mid_mask
 
         t_pad =  (t_kern//2, 1, 1)
+
+        # self.mask_predictor = nn.Sequential(
+        #     nn.Conv3d(input_channels, 8, kernel_size=3, padding=1),
+        #     nn.ReLU(),
+        #     nn.Conv3d(8, 1, kernel_size=1),
+        #     nn.Sigmoid()  # Output: (B, 1, T, H, W)
+        # )
+        self.mask_predictor = nn.Sequential(
+            nn.Conv3d(input_channels, 8, kernel_size=3, padding=1, padding_mode='replicate'),
+            nn.BatchNorm3d(8),
+            nn.ReLU(),
+            nn.Dropout3d(p=0.3),  # adjust p based on mask stability
+            nn.Conv3d(8, 1, kernel_size=1),
+            nn.Sigmoid()  # Final attention mask
+        )
+
+        self.mid_mask = nn.Sequential(
+            nn.Conv3d(64, 16, kernel_size=3, padding=1, padding_mode='replicate'),
+            nn.BatchNorm3d(16),
+            nn.ReLU(),
+            nn.Conv3d(16, 64, kernel_size=1),
+            nn.Sigmoid()
+        )
 
         self.conv1 = nn.Conv3d(in_channels=input_channels, out_channels=32, kernel_size=(1,5,5), padding=(0,2,2), padding_mode=padding_mode)
         # self.conv1.register_forward_hook(debug_hook)
@@ -87,12 +112,29 @@ class PhysNet(nn.Module):
 
         self.drop3d = nn.Dropout3d(drop_p)
 
-        self.forward_stream = nn.Sequential(
+        # self.forward_stream = nn.Sequential(
+        #     self.conv1, self.bn1, nn.ReLU(), self.max_pool1,
+        #     self.conv2, self.bn2, nn.ReLU(),
+        #     self.conv3, self.bn3, nn.ReLU(), self.drop3d, self.max_pool2,
+        #     self.conv4, self.bn4, nn.ReLU(),
+        #     self.conv5, self.bn5, nn.ReLU(), self.drop3d, self.max_pool3,
+        #     self.conv6, self.bn6, nn.ReLU(),
+        #     self.conv7, self.bn7, nn.ReLU(), self.drop3d, self.max_pool4,
+        #     self.conv8, self.bn8, nn.ReLU(),
+        #     self.conv9, self.bn9, nn.ReLU(), self.drop3d, self.avg_pool1,
+        #     self.conv10
+        # )
+
+        self.encoder1 = nn.Sequential(  # up to conv5
             self.conv1, self.bn1, nn.ReLU(), self.max_pool1,
             self.conv2, self.bn2, nn.ReLU(),
             self.conv3, self.bn3, nn.ReLU(), self.drop3d, self.max_pool2,
             self.conv4, self.bn4, nn.ReLU(),
-            self.conv5, self.bn5, nn.ReLU(), self.drop3d, self.max_pool3,
+            self.conv5, self.bn5, nn.ReLU()
+        )
+
+        self.encoder2 = nn.Sequential(  # after mid-mask
+            self.drop3d, self.max_pool3,
             self.conv6, self.bn6, nn.ReLU(),
             self.conv7, self.bn7, nn.ReLU(), self.drop3d, self.max_pool4,
             self.conv8, self.bn8, nn.ReLU(),
@@ -100,10 +142,32 @@ class PhysNet(nn.Module):
             self.conv10
         )
 
+    # def forward(self, x):
+    #     mask = self.mask_predictor(x) # shape: (B, 1, T, H, W)
+    #     x = x * mask                          # soft attention over space-time
+    #     # print("Input shape:", x.shape)         # Should be [B, C, T, H, W]
+    #     x = self.forward_stream(x)
+    #     x = torch.flatten(x, start_dim=1, end_dim=4)
+    #     # print("Output shape:", x.shape)        # Should be [B, T]
+    #     # sys.exit(0)
+    #     # return x
+    #     return x, mask, None
+
     def forward(self, x):
-        # print("Input shape:", x.shape)         # Should be [B, C, T, H, W]
-        x = self.forward_stream(x)
+        early_mask = None
+        mid_mask = None
+        if self.early_mask:
+            early_mask = self.mask_predictor(x)
+            x = x * early_mask
+
+        x = self.encoder1(x)
+
+        if self.mid_mask:
+            mid_mask = self.mid_mask(x)
+            x = x * mid_mask
+
+        x = self.encoder2(x)
         x = torch.flatten(x, start_dim=1, end_dim=4)
-        # print("Output shape:", x.shape)        # Should be [B, T]
-        return x
+
+        return x, early_mask, mid_mask
 

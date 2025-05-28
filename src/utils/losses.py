@@ -10,11 +10,12 @@ def select_loss(arg_obj):
     losses = arg_obj.losses
 
     criterion_funcs = {
-            'ipr': IPR_SSL, ## bandwidth loss
-            'snr': SNR_SSL, ## sparsity loss
-            'emd': EMD_SSL, ## variance loss
-            'snrharm': SNR_harmonic_SSL, ## sparsity with harmonics (not recommended)
-            'normnp': NP_SUPERVISED ## supervised negative pearson loss
+        'ipr': IPR_SSL,
+        'snr': SNR_SSL,
+        'emd': EMD_SSL,
+        'snrharm': SNR_harmonic_SSL,
+        'normnp': NP_SUPERVISED,
+        'maskcontrast': MASK_CONTRAST_SSL  # ✅ NEW
     }
 
     criterions = {}
@@ -31,7 +32,8 @@ def select_loss(arg_obj):
             criterions['sparsity'] = criterion_funcs[arg_obj.sparsity_loss]
         if 'v' in losses:
             criterions['variance'] = criterion_funcs[arg_obj.variance_loss]
-
+        if 'm' in losses:
+            criterions['maskcontrast'] = criterion_funcs['maskcontrast']
     return criterions
 
 
@@ -42,7 +44,8 @@ def select_validation_loss(arg_obj):
             'snr': SNR_SSL, ## sparsity loss
             'emd': EMD_SSL, ## variance loss
             'snrharm': SNR_harmonic_SSL, ## sparsity with harmonics (not recommended)
-            'normnp': NP_SUPERVISED ## supervised negative pearson loss
+            'normnp': NP_SUPERVISED, ## supervised negative pearson loss
+            'maskcontrast': MASK_CONTRAST_SSL  # ✅ NEW
     }
 
     criterions = {}
@@ -57,6 +60,8 @@ def select_validation_loss(arg_obj):
             criterions['bandwidth'] = criterion_funcs[arg_obj.bandwidth_loss]
         if 's' in validation_loss:
             criterions['sparsity'] = criterion_funcs[arg_obj.sparsity_loss]
+        if 'm' in validation_loss:
+            criterions['maskcontrast'] = criterion_funcs['maskcontrast']
     return criterions
 
 
@@ -226,6 +231,35 @@ def NP_SUPERVISED(x, y, spectral1=None, spectral2=None):
     r_vals = r_num / r_den
     r_val = torch.mean(r_vals)
     return (1 - r_val)/2
+
+def MASK_CONTRAST_SSL(x, mask, fps=30, device=None, low_hz=0.66, high_hz=3.0):
+    """
+    Encourage more rPPG power in masked regions vs. background within the physiological band.
+    Suppress noise with similar frequency in the background region.
+    """
+    EPSILON = 1e-8  # avoid divide-by-zero
+    B, C, T, H, W = x.shape
+
+    # Average signals over spatial region
+    masked_signal = (x * mask).mean(dim=[1, 3, 4])         # (B, T)
+    bg_signal     = (x * (1 - mask)).mean(dim=[1, 3, 4])   # (B, T)
+
+    # Power spectral densities
+    freqs, psd_masked = torch_power_spectral_density(masked_signal, fps=fps, normalize=False, bandpass=False)
+    _, psd_bg         = torch_power_spectral_density(bg_signal, fps=fps, normalize=False, bandpass=False)
+
+    # Focus only on target band
+    band_mask = (freqs >= low_hz) & (freqs <= high_hz)
+    psd_masked_band = psd_masked[:, band_mask]
+    psd_bg_band = psd_bg[:, band_mask]
+
+    power_masked = psd_masked_band.sum(dim=1)  # (B,)
+    power_bg     = psd_bg_band.sum(dim=1)      # (B,)
+
+    # log-ratio version (use this if margin is unstable)
+    contrast = -torch.log((power_masked + EPSILON) / (power_masked + power_bg + EPSILON))
+
+    return contrast.mean()
 
 
 def ideal_bandpass(freqs, psd, low_hz, high_hz):

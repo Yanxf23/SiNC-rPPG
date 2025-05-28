@@ -40,14 +40,22 @@ def get_input():
                         default=5,
                         type=int,
                         help='Number of PSD plots. [5]')
-
+    ################### Masks ########################
+    parser.add_argument('--early_mask',
+                        default=True,
+                        type=bool,
+                        help='Whether to use an early mask in the model. [False]')
+    parser.add_argument('--mid_mask',
+                        default=True,
+                        type=bool,
+                        help='Whether to use a mid mask in the model. [False]')
     ################### Losses ########################
     parser.add_argument('--losses',
-                        default='bsv',
+                        default='bsvm',
                         type=str,
                         help='Loss functions used during training (b=bandwidth, s=sparsity, v=variance). [bsv]')
     parser.add_argument('--validation_loss',
-                        default='bs',
+                        default='bsm',
                         type=str,
                         help='Loss functions used for selecting the best model. Similar to --losses. [bs]')
     parser.add_argument('--bandwidth_loss',
@@ -82,6 +90,26 @@ def get_input():
                         default=1.0,
                         type=float,
                         help='Scalar for variance loss. [1.0]')
+    parser.add_argument('--mask_entropy_scalar',
+                        default=1.0,
+                        type=float,
+                        help='Scalar for mask entropy loss. [1.0]')
+    parser.add_argument('--mask_l1_scalar',
+                        default=1.0,
+                        type=float,
+                        help='Scalar for mask L1 loss. [1.0]')
+    parser.add_argument('--mid_mask_entropy_scalar',
+                        default=1.0,
+                        type=float,
+                        help='Scalar for mask entropy loss. [1.0]')
+    parser.add_argument('--mid_mask_l1_scalar',
+                        default=1.0,
+                        type=float,
+                        help='Scalar for mask L1 loss. [1.0]')
+    parser.add_argument('--mask_contrast_scalar',
+                        default=1.0,
+                        type=float,
+                        help='Scalar for mask contrast loss. [1.0]')
 
     ################### Training Hyperparameters ########################
     parser.add_argument('--optimization_step',
@@ -161,11 +189,11 @@ def get_input():
                         type=str,
                         help='static for repeated frames, shuffle for random frames, static_periodic for periodic noise, or real for real data. [real]')
     parser.add_argument('--train_path',
-                        default='../../data/see3/train',
+                        default='/home/ubuntu/mobilex-east3/xiaofeng/PPGPalm/data/see3/train',
                         type=str,
                         help='Path to training data.')
     parser.add_argument('--val_path',   
-                        default='../../data/see3/val',
+                        default='/home/ubuntu/mobilex-east3/xiaofeng/PPGPalm/data/see3/val',
                         type=str,
                         help='Path to validation data.')
     parser.add_argument('--fps',

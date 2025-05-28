@@ -177,7 +177,7 @@ def infer_over_dataset_testing(model, val_set, criterion, device, arg_obj, norme
 
     return ave_loss, oadd_waves, pred_HRs, gt_waves, gt_HRs
 
-def infer_over_dataset_testing_cup(model, dataset, criterion, device, args):
+def infer_over_dataset_testing_cup_old(model, dataset, criterion, device, args):
     pred_waves = []
     identifiers = []
     with torch.no_grad():
@@ -190,6 +190,76 @@ def infer_over_dataset_testing_cup(model, dataset, criterion, device, args):
             identifiers.append(subj)
 
     return pred_waves, identifiers
+
+# def infer_over_dataset_testing_cup(model, dataset, criterion, device, args):
+#     pred_waves = []
+#     identifiers = []
+#     raw_inputs = []
+#     attention_masks = []
+#     unmasked_signals = []
+
+#     with torch.no_grad():
+#         for clip, subj, idcs, speed in dataset:
+#             print(f"Processing subject: {subj}")
+#             clip = clip.to(device)  # shape: (C, T, H, W)
+#             raw_inputs.append(clip.cpu().numpy())  # for overlay visualization
+
+#             # -----------------------------
+#             # Unmasked signal (naive mean)
+#             # -----------------------------
+#             unmasked = clip.mean(dim=[0, 2, 3])  # shape: (T,)
+#             unmasked_signals.append(unmasked.cpu().numpy())
+
+#             # -----------------------------
+#             # Masked prediction
+#             # -----------------------------
+#             if hasattr(model, 'mask_predictor'):
+#                 mask = model.mask_predictor(clip.unsqueeze(0))  # shape: (1, 1, T, H, W)
+#                 attention_masks.append(mask.squeeze(0).cpu().numpy())  # save for visualization
+#             else:
+#                 raise AttributeError("Model does not have mask_predictor attribute")
+
+#             pred = model(clip.unsqueeze(0))  # [1, T]
+#             pred = pred.squeeze(0).cpu().numpy()
+
+#             pred_waves.append(pred)
+#             identifiers.append(subj)
+
+#     return pred_waves, identifiers, raw_inputs, attention_masks, unmasked_signals
+
+def infer_over_dataset_testing_cup(model, dataset, criterion, device, args):
+    pred_waves = []
+    identifiers = []
+    raw_inputs = []
+    attention_masks = []
+    unmasked_signals = []
+
+    with torch.no_grad():
+        for clip, subj, idcs, speed in dataset:
+            print(f"Processing subject: {subj}")
+            clip = clip.to(device)  # shape: (C, T, H, W)
+            raw_inputs.append(clip.cpu().numpy())
+
+            # --- Unmasked signal ---
+            unmasked = clip.mean(dim=[0, 2, 3])  # (T,)
+            unmasked_signals.append(unmasked.cpu().numpy())
+
+            # --- Model forward (always returns x, early_mask, mid_mask) ---
+            pred, early_mask, mid_mask = model(clip.unsqueeze(0))  # (1, T), (1, 1, T, H, W), (1, 1, T, H, W)
+
+            # --- Selective mask collection based on args ---
+            mask_entry = {}
+            if args.early_mask and early_mask is not None:
+                mask_entry['early'] = early_mask.squeeze(0).cpu().numpy()
+            if args.mid_mask and mid_mask is not None:
+                mask_entry['mid'] = mid_mask.squeeze(0).cpu().numpy()
+            attention_masks.append(mask_entry if mask_entry else None)
+
+            pred = pred.squeeze(0).cpu().numpy()
+            pred_waves.append(pred)
+            identifiers.append(subj)
+
+    return pred_waves, identifiers, raw_inputs, attention_masks, unmasked_signals
 
 def evaluate_predictions(pred_waves, pred_HRs, gt_waves, gt_HRs):
     flat_pred_waves = np.hstack((pred_waves))
