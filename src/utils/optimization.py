@@ -189,22 +189,12 @@ def unsupervised_train_step(model, data, criterions, device, arg_obj):
 #     losses_dict['total'] = total_loss
 #     return losses_dict
 
+def loss(x, k, lower_bound, upper_bound):
+    return torch.log1p(torch.exp(k * (lower_bound - x))) + torch.log1p(torch.exp(k * (x - upper_bound)))
+
 def mask_losses(mask, tag, arg_obj):
     # --- Entropy ---
     entropy = -(mask * torch.log(mask + 1e-6) + (1 - mask) * torch.log(1 - mask + 1e-6)).mean()
-
-    # # --- Per-frame range loss ---
-    # # mask: (B, 1, T, H, W)
-    # B, _, T, H, W = mask.shape
-    # mask_reshaped = mask.view(B, T, -1)         # (B, T, H*W)
-    # mu_t = mask_reshaped.mean(dim=2)            # (B, T), mean per frame
-    # mu_t = mu_t.mean(dim=0)                     # (T,), average across batch
-
-    # lower_bound = 0.05
-    # upper_bound = 0.30
-    # lower_penalty = torch.relu(lower_bound - mu_t)  # (T,)
-    # upper_penalty = torch.relu(mu_t - upper_bound)  # (T,)
-    # l1 = (lower_penalty + upper_penalty).mean()     # scalar loss
 
     B, _, T, H, W = mask.shape
     mask_reshaped = mask.view(B, T, -1)
@@ -212,13 +202,9 @@ def mask_losses(mask, tag, arg_obj):
     mu_t = mu_t.mean(dim=0)             # (T,) per-frame average across batch
 
     lower_bound = 0.05
-    upper_bound = 0.30
-
-    # Use squared penalty instead of ReLU (smooth gradient)
-    lower_violation = ((torch.clamp(lower_bound - mu_t, min=0.0)) ** 2)
-    upper_violation = ((torch.clamp(mu_t - upper_bound, min=0.0)) ** 2)
-
-    l1 = (lower_violation + upper_violation).mean()
+    upper_bound = 0.20
+    k = 10  # sharpness parameter (increase for sharper transitions)
+    l1 = loss(mu_t, k, lower_bound, upper_bound).mean()
 
     return {
         f'{tag}_entropy': entropy,

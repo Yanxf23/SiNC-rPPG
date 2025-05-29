@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 import pandas as pd
 import scipy.signal as sps
 from collections import defaultdict
-from sklearn.metrics import mean_absolute_error, mean_squared_error
+from sklearn.metrics import mean_absolute_error, root_mean_squared_error
 from scipy.stats import pearsonr
 from scipy.signal import periodogram, find_peaks, windows
 from scipy.ndimage import gaussian_filter1d
@@ -29,7 +29,7 @@ os.makedirs(results_dir, exist_ok=True)
 
 # === Ground truth reader ===
 def read_csv(user_id):
-    csv_path = r"user_info.csv"
+    csv_path = r"C:\Users\mobil\Desktop\25summer\PPGPalm\SiNC-rPPG\CUP_verify\user_info.csv"
     df = pd.read_csv(csv_path)
     user_row = df[df['User ID'].astype(str).str.zfill(3) == user_id]
     if not user_row.empty:
@@ -196,7 +196,7 @@ def estimate_PVI(signal, fs):
     return (np.std(amplitudes) / np.mean(amplitudes)) * 100 if len(amplitudes) > 1 else 0
 
 def get_results(file_path):
-    user_id = file_path.split("/")[-1].split("_")[0]
+    user_id = file_path.split("\\")[-1].split("_")[0]
     rppg_signal, t = load_npy(file_path)
     fs = 30
     ground_truth = read_csv(user_id)
@@ -235,6 +235,7 @@ def process_directory(directory, condition, cam):
     return results
 
 def plot_comparison_grouped(df, signal_name, est_col, gt_col, save_path):
+    print(df)
     df_grouped = df.groupby('User ID')[[gt_col, est_col]].agg(['mean', 'std'])
     users = df_grouped.index.tolist()
     gt_mean = df_grouped[(gt_col, 'mean')]
@@ -271,12 +272,12 @@ def plot_comparison(df, signal_name, est_col, gt_col, save_path):
     plt.savefig(save_path)
     plt.close()
 
-def plot_comparison_new(df, signal_name, est_col, gt_col, save_path):
+def plot_comparison_new(df, signal_name, est_col, gt_col, save_path): 
     plt.figure(figsize=(6, 6))
     
     x = df[gt_col]
     y = df[est_col]
-    # print(df, x, y)
+    print(df, x, y)
     
     plt.scatter(x, y, c='blue', marker='o', label='Data Points')
     plt.plot([x.min(), x.max()], [x.min(), x.max()], 'r--', label='Ideal')  # Identity line
@@ -313,7 +314,8 @@ def compute_metrics(gt, est):
         return None
     gt, est = gt[mask], est[mask]
     mae = mean_absolute_error(gt, est)
-    rmse = mean_squared_error(gt, est, squared=False)
+    rmse = root_mean_squared_error(gt, est)
+    
     return mae, rmse
 
 def compute_metrics_per_user(df, user_col, gt_col, est_col):

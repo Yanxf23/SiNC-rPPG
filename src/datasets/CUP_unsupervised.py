@@ -37,7 +37,8 @@ class CupDataset(Dataset):
         wavelength = parts[-3]
         hand = parts[-6]
         condition = parts[-2]
-        return f"{user}_{hand}_{cam}_{wavelength}_{condition}"
+        clip_id = parts[-1].replace('.npy', '')
+        return f"{user}_{hand}_{cam}_{wavelength}_{condition}_{clip_id}"
 
     def load_dataset(self):
         npy_files = sorted(glob.glob(os.path.join(self.data_path, "*.npy")))

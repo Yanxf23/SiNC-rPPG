@@ -91,13 +91,13 @@ def get_input():
                         type=float,
                         help='Scalar for variance loss. [1.0]')
     parser.add_argument('--mask_entropy_scalar',
-                        default=1.0,
+                        default=0.1,
                         type=float,
-                        help='Scalar for mask entropy loss. [1.0]')
+                        help='Scalar for mask entropy loss. [0.1]')
     parser.add_argument('--mask_l1_scalar',
-                        default=1.0,
+                        default=0.1,
                         type=float,
-                        help='Scalar for mask L1 loss. [1.0]')
+                        help='Scalar for mask L1 loss. [0.1]')
     parser.add_argument('--mid_mask_entropy_scalar',
                         default=1.0,
                         type=float,
@@ -107,7 +107,7 @@ def get_input():
                         type=float,
                         help='Scalar for mask L1 loss. [1.0]')
     parser.add_argument('--mask_contrast_scalar',
-                        default=1.0,
+                        default=0.0,
                         type=float,
                         help='Scalar for mask contrast loss. [1.0]')
 
@@ -151,7 +151,7 @@ def get_input():
                         type=float,
                         help='Dropout used in model. [0.5]')
     parser.add_argument('--batch_size',
-                        default=20,
+                        default=1,
                         type=int,
                         help='Batch size for training. [20]')
     parser.add_argument('--fpc',
@@ -189,11 +189,11 @@ def get_input():
                         type=str,
                         help='static for repeated frames, shuffle for random frames, static_periodic for periodic noise, or real for real data. [real]')
     parser.add_argument('--train_path',
-                        default='/home/ubuntu/mobilex-east3/xiaofeng/PPGPalm/data/see3/train',
+                        default=r'C:\Users\mobil\Desktop\25summer\PPGPalm\data\see3\train',
                         type=str,
                         help='Path to training data.')
     parser.add_argument('--val_path',   
-                        default='/home/ubuntu/mobilex-east3/xiaofeng/PPGPalm/data/see3/val',
+                        default=r'C:\Users\mobil\Desktop\25summer\PPGPalm\data\see3\val',
                         type=str,
                         help='Path to validation data.')
     parser.add_argument('--fps',

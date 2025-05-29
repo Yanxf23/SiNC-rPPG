@@ -112,6 +112,9 @@ def plot_waveform(npy_path, save=True):
 
 def main():
     arg_obj = args.get_input()
+    local_parser = argparse.ArgumentParser()
+    local_parser.add_argument("--gif", type=str, default="False")
+    local_args, _ = local_parser.parse_known_args()
 
     # --- Inference configuration ---
     experiment_dir = arg_obj.experiment_root  # e.g., experiments/cup_model/
@@ -168,8 +171,10 @@ def main():
         # Unpack early/mid masks from dict
         early = mask.get('early') if isinstance(mask, dict) else None
         mid = mask.get('mid') if isinstance(mask, dict) else None
-        print(early.min(), early.max(), early.mean())
-        plot_mask_gif(raw, early_mask=early, mid_mask=mid, save_path=gif_path, fps=15)
+        # print(early.min(), early.max(), early.mean())
+        # print(mid.min(), mid.max(), mid.mean())
+        # if local_args.gif.lower() == 'true':
+        # plot_mask_gif(raw, early_mask=early, mid_mask=mid, save_path=gif_path, fps=15)
 
     print(f"✅ Saved {len(pred_waves)} predicted waveforms to {output_dir}")
 

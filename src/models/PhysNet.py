@@ -42,6 +42,22 @@ def save_clip_as_mp4(clip_tensor, save_path="clip.mp4", fps=10):
 def debug_hook(module, input, output):
     save_clip_as_mp4(input[0][0].cpu())  # Show first clip in batch
 
+class MultiScaleTemporalBlock(nn.Module):
+    def __init__(self, in_channels, out_channels):
+        super().__init__()
+        self.conv3 = nn.Conv3d(in_channels, out_channels, kernel_size=(3,3,3), padding=(1,1,1))
+        self.conv5 = nn.Conv3d(in_channels, out_channels, kernel_size=(5,3,3), padding=(2,1,1))
+        self.conv9 = nn.Conv3d(in_channels, out_channels, kernel_size=(9,3,3), padding=(4,1,1))
+        self.bn = nn.BatchNorm3d(out_channels * 3)
+        self.relu = nn.ReLU()
+
+    def forward(self, x):
+        x3 = self.conv3(x)
+        x5 = self.conv5(x)
+        x9 = self.conv9(x)
+        x_cat = torch.cat([x3, x5, x9], dim=1)
+        return self.relu(self.bn(x_cat))
+
 class PhysNet(nn.Module):
     def __init__(self, input_channels=1, drop_p=0.5, t_kern=5, early_mask=False, mid_mask=False, padding_mode='replicate'):
         '''
@@ -63,16 +79,16 @@ class PhysNet(nn.Module):
         #     nn.Sigmoid()  # Output: (B, 1, T, H, W)
         # )
         self.mask_predictor = nn.Sequential(
-            nn.Conv3d(input_channels, 8, kernel_size=3, padding=1, padding_mode='replicate'),
+            nn.Conv3d(input_channels, 8, kernel_size=(5, 3, 3), padding=(2, 1, 1), padding_mode='replicate'),
             nn.BatchNorm3d(8),
             nn.ReLU(),
-            nn.Dropout3d(p=0.3),  # adjust p based on mask stability
+            # nn.Dropout3d(p=0.3),  # adjust p based on mask stability
             nn.Conv3d(8, 1, kernel_size=1),
             nn.Sigmoid()  # Final attention mask
         )
 
         self.mid_mask = nn.Sequential(
-            nn.Conv3d(64, 16, kernel_size=3, padding=1, padding_mode='replicate'),
+            nn.Conv3d(64, 16, kernel_size=(5, 3, 3), padding=(2, 1, 1), padding_mode='replicate'),
             nn.BatchNorm3d(16),
             nn.ReLU(),
             nn.Conv3d(16, 64, kernel_size=1),
@@ -130,13 +146,13 @@ class PhysNet(nn.Module):
             self.conv2, self.bn2, nn.ReLU(),
             self.conv3, self.bn3, nn.ReLU(), self.drop3d, self.max_pool2,
             self.conv4, self.bn4, nn.ReLU(),
-            self.conv5, self.bn5, nn.ReLU()
-        )
-
-        self.encoder2 = nn.Sequential(  # after mid-mask
+            self.conv5, self.bn5, nn.ReLU(),
             self.drop3d, self.max_pool3,
             self.conv6, self.bn6, nn.ReLU(),
             self.conv7, self.bn7, nn.ReLU(), self.drop3d, self.max_pool4,
+        )
+
+        self.encoder2 = nn.Sequential(  # after mid-mask
             self.conv8, self.bn8, nn.ReLU(),
             self.conv9, self.bn9, nn.ReLU(), self.drop3d, self.avg_pool1,
             self.conv10
